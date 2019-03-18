@@ -2,7 +2,7 @@
 
 /*
   Plugin Name: Yoojeen Vote
-  Description: Создаёт форму голосования при помощи шорткода вида [vote item1="PHP" item2="JavaScript" ]
+  Description: Создаёт форму голосования при помощи шорткода вида [vote name="langs" item1="PHP" item2="JavaScript" ]
   Author: Yoojeen
  */
 
@@ -15,14 +15,18 @@ require 'clear-content.php';
 
 // подключение js скрипта 
 add_action( 'wp_footer', 'vote_scripts' );
-
-function yoojeen_scripts() {
-	$vote_info	 = get_option( 'yoojeen_vote' );
-	$total		 = array_sum( $vote_info );
-	wp_enqueue_script(
-	'yoojeen-vote', plugins_url( 'js/yoojeen-vote.js', __FILE__ ), array( 'jquery' ) );
-	// передаём данные в js script, объект будет называться voteInfo
-	wp_localize_script( 'yoojeen-vote', 'voteInfo', array( 'myurl' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'yoojeen' ), 'items' => $vote_info, 'total' => $total ) );
+// только для страниц содержащих шорткод
+function vote_scripts() {
+    global $post;
+	if( has_shortcode( $post->post_content, 'vote' ) ){
+		wp_enqueue_script( 'yoojeen-vote', plugins_url( 'js/yoojeen_vote.js', __FILE__ ), array( 'jquery' ) );
+	
+		// передаём данные в js script, объект будет называться voteInfo
+		wp_localize_script( 'yoojeen-vote', 'voteInfo', array(
+			'myurl' => admin_url( 'admin-ajax.php' ),
+			'nonce' => wp_create_nonce( 'yoojeen' ),
+				) );
+	}
 }
 
 // обработчик запроса для авторизованных и для неавторизованных пользователей
@@ -36,13 +40,13 @@ add_shortcode( 'vote', 'vote_create' );
 function vote_create( $atts ) {
 	if ( empty( $atts ) )
 		return "<p>No items to vote for</p>";
-
-	$result = '<form method="post" id="vote_form">';
-
+	$option_name = $atts['name'];
+	
+	$result = '<form method="post" id="'.$option_name.'">';
 	$yoojeen_vote = array();
 
 	// получаем данные из базы, если опция уже существует
-	if ( $options = get_option( 'yoojeen_vote' ) ) {
+	if ( $options = get_option( $option_name ) ) {
 		$total = array_sum( $options );
 	} else {
 		$total = 0;
@@ -50,46 +54,51 @@ function vote_create( $atts ) {
 	$i = 0;
 	foreach ( $atts as $item ) {
 		$item = sanitize_text_field( $item );
+        if ($item == $option_name) {
+            continue;
+        }
 		if ( $total ) {
 			// переменная для установки ширины прогресс бара
-			$progress_value = ($options[ 'yoojeen_vote' . $i ] / $total) * 100;
+			$progress_value = ($options[ $option_name . $i ] / $total) * 100;
 		} else {
 			$progress_value = 0;
 		}
-		$result							 .= '<div>';
-		$result							 .= "{$item}  <input type='radio' name='yoojeen_vote" . $i . "' value='yoojeen_vote" . $i . "' class='yoojeen_vote'><span>голосов: </span><b>" . ($options[ 'yoojeen_vote' . $i ] ? $options[ 'yoojeen_vote' . $i ] : 0) . "</b><br>";
-		$result							 .= "<progress name='yoojeen_vote" . $i . "' value='" . $progress_value . "' max='100'></progress><br>";
-		$result							 .= '</div>';
-		$yoojeen_vote[ 'yoojeen_vote' . $i ] = 0;
+		//$result							 .= '<div>';
+		$result							 .= "{$item}  <input type='radio' name='" . $option_name . "' value='" . $option_name. $i . "' class='yoojeen_vote'><span>голосов: </span><b>" . ($options[ $option_name . $i ] ? $options[ $option_name . $i ] : 0) . "</b><br>";
+		$result							 .= "<progress name='" .$option_name.$i . "' value='" . $progress_value . "' max='100'></progress><br>";
+		//$result							 .= '</div>';
+		$yoojeen_vote[$option_name . $i] = 0;
 		$i++;
 	}
-	$result .= '<input type="submit" name="vote_form">
+	$result .= '<input type="submit" name="'.$option_name.'" class="vote_form_button">
 	</form>
-	<h4>Всего: <span id="total"></span></h4>';
+	<h4>Всего: <span id="'.$option_name.'_total">'.$total.'</span></h4>';
 
 	// добавляется только в первый раз, если существует, то ничего не делает
-	add_option( 'yoojeen_vote', $yoojeen_vote );
+	add_option( $option_name, $yoojeen_vote );
+
 	return $result;
 }
 
 // обработчик данных из ajax запроса
 function vote_form_capture() {
+     
 	if ( isset( $_POST[ 'formData' ] ) ) {
-
+        $option_name = $_POST['option_name'];
 		$res = array();
 
 		$item = $_POST[ 'formData' ];
 
-		$opt_arr = get_option( 'yoojeen_vote' );
+		$opt_arr = get_option( $option_name );
 		foreach ( $opt_arr as $key => $val ) {
 			if ( $key == $item ) {
 				$opt_arr[ $key ] ++;
 			}
 		}
 
-		update_option( 'yoojeen_vote', $opt_arr );
+		update_option( $option_name, $opt_arr );
 		// передаём обновлённые данные в js script
-		$res[ 'item_votes' ]		 = get_option( 'yoojeen_vote' );
+		$res[ 'item_votes' ]		 = get_option( $option_name );
 		// общее количество
 		$res[ 'total' ]			 = array_sum( $opt_arr );
 		// выбранный элемент
