@@ -1,0 +1,2 @@
+# vote
+Плагин для WordPress
